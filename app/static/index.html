@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>双通道采集与完整性证据台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>双通道采集与完整性证据台</h1>
+    <div class="sub">业务推送 + 分页拉取接入同一采集面。所有数据均为本地虚构；
+      完整性只按“业务键 + 修订号”核对，绝不以到达顺序定新旧，也绝不把查不到当删除。</div>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="collect">采集与核对</button>
+    <button class="tab" data-tab="records">逐条归属</button>
+    <button class="tab" data-tab="evidence">证据与请求账本</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ 采集与核对 ============ -->
+  <section id="tab-collect">
+    <div class="grid cols-2">
+      <div class="stack">
+        <div class="panel">
+          <h2>两个独立本地来源 <span class="tag">各自独立推送/拉取</span></h2>
+          <div id="source-list" class="source-list"></div>
+          <div class="divider"></div>
+          <div class="section-title">来源配置（仅影响此本地源）</div>
+          <div class="stack">
+            <label class="row"><span class="hint" style="width:96px">推送</span>
+              <select id="cfg-push">
+                <option value="1">启用</option><option value="0">停用</option>
+              </select>
+              <span class="hint" style="width:96px">拉取</span>
+              <select id="cfg-pull">
+                <option value="1">启用</option><option value="0">停用</option>
+              </select>
+            </label>
+            <label class="row"><span class="hint" style="width:96px">页大小</span>
+              <input id="cfg-page" type="number" min="1" max="50" style="width:74px">
+              <span class="hint" style="width:96px">拉取延迟 ms</span>
+              <input id="cfg-delay" type="number" min="0" max="10000" step="100" style="width:92px">
+            </label>
+            <label class="row"><span class="hint" style="width:96px">随机丢批</span>
+              <select id="cfg-drop">
+                <option value="0">否</option><option value="1">是</option>
+              </select>
+              <span class="hint" style="width:96px">丢批概率 %</span>
+              <input id="cfg-rate" type="number" min="0" max="100" style="width:74px">
+            </label>
+            <div class="row">
+              <button id="cfg-save">应用配置</button>
+              <button id="btn-reset" class="danger ghost">重置本来源数据</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>演示场景 <span class="tag">制造断档 / 冲突 / 高版本</span></h2>
+          <div id="scenario-list" class="stack"></div>
+          <div class="divider"></div>
+          <div class="section-title">手工写入与故障注入</div>
+          <div class="stack">
+            <label class="row"><span class="hint" style="width:70px">业务键</span>
+              <input id="write-key" list="key-list" placeholder="C-1001" style="flex:1">
+              <datalist id="key-list"></datalist>
+            </label>
+            <label class="row"><span class="hint" style="width:70px">备注</span>
+              <input id="write-note" placeholder="虚构内容" style="flex:1">
+            </label>
+            <div class="row">
+              <button id="btn-write">写入一条</button>
+              <button id="btn-outage" class="ghost">丢失后续 3 条推送</button>
+            </div>
+            <div class="row">
+              <button id="btn-inject" class="ghost">对选中键注入同修订冲突</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="panel">
+          <div class="row between">
+            <h2 id="source-title">来源</h2>
+            <div class="row">
+              <span id="transport-badges" class="row"></span>
+              <button id="btn-drain" class="primary">接收推送</button>
+            </div>
+          </div>
+          <div class="stat-grid mt8" id="stat-grid"></div>
+        </div>
+
+        <div class="panel">
+          <div class="row between">
+            <h2>完整性结论 <span class="tag">必须有证据</span></h2>
+            <span id="conclusion-badge" class="badge">—</span>
+          </div>
+          <div id="conclusion" class="conclusion mt8"></div>
+          <ul id="evidence" class="evidence"></ul>
+        </div>
+
+        <div class="grid cols-2" style="grid-template-columns: 1fr 1fr">
+          <div class="panel">
+            <h2>策略选择 <span class="tag">成本 vs 可证明范围</span></h2>
+            <div id="plan" class="stack"></div>
+            <div class="row mt12">
+              <button id="btn-full" class="primary">执行全量核对</button>
+              <button id="btn-point" class="ghost">执行定向补采</button>
+            </div>
+            <label class="row mt8 hint">
+              <input type="checkbox" id="chk-crash"> 全量核对执行中模拟工作进程半途停止
+            </label>
+            <label class="row mt8 hint">
+              <input type="checkbox" id="chk-revise"> 定向补采时让上游在确认前再次修订选中键
+            </label>
+            <div id="run-progress" class="mt12"></div>
+          </div>
+          <div class="panel">
+            <h2>未排除缺口与疑点 <span class="tag">恢复进度</span></h2>
+            <div id="gaps" class="stack"></div>
+            <div class="section-title">疑点队列</div>
+            <div id="suspects" class="stack"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>冲突队列 <span class="tag">同修订不同内容 · 需人工裁决</span></h2>
+          <div id="conflicts" class="stack"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 逐条归属 ============ -->
+  <section id="tab-records" style="display:none">
+    <div class="panel">
+      <div class="row between">
+        <h2>逐条归属 <span class="tag" id="records-source-label"></span></h2>
+        <div class="row">
+          <input id="record-filter" placeholder="按业务键过滤" style="width:200px">
+          <button id="btn-point-selected" class="ghost">对选中键定向补采</button>
+        </div>
+      </div>
+      <div class="legend mt8">
+        <span><span class="dot" style="background:var(--accent)"></span>推送到达</span>
+        <span><span class="dot" style="background:var(--purple)"></span>拉取确认</span>
+        <span><span class="dot" style="background:var(--warn)"></span>未经拉取确认</span>
+        <span><span class="dot" style="background:var(--bad)"></span>已删除（墓碑）</span>
+      </div>
+      <div class="scroll mt8">
+        <table>
+          <thead><tr>
+            <th><input type="checkbox" id="rec-all"></th>
+            <th>业务键</th><th>修订</th><th>当前归属</th><th>首次到达</th>
+            <th>拉取确认至</th><th>内容摘要</th><th>更新时间</th>
+          </tr></thead>
+          <tbody id="records-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel mt12">
+      <h2>选中业务的完整轨迹 <span class="tag">两路到达、冲突、裁决与恢复</span></h2>
+      <div id="record-trace" class="empty">在表中点击一行查看轨迹</div>
+    </div>
+  </section>
+
+  <!-- ============ 证据 ============ -->
+  <section id="tab-evidence" style="display:none">
+    <div class="grid cols-2" style="grid-template-columns: 1fr 1fr">
+      <div class="panel">
+        <h2>完整性证据</h2>
+        <div id="evidence-panel" class="stack"></div>
+      </div>
+      <div class="panel">
+        <h2>请求账本 <span class="tag">成本与覆盖</span></h2>
+        <div id="request-costs" class="stat-grid"></div>
+        <div class="scroll mt12" style="max-height:520px">
+          <table>
+            <thead><tr><th>#</th><th>通道</th><th>类型</th><th>成本</th>
+              <th>行</th><th>应用/重复/冲突</th><th>覆盖范围</th><th>页哈希</th></tr></thead>
+            <tbody id="requests-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="panel mt12">
+      <h2>运行记录 <span class="tag">可续跑与半途停止</span></h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>run</th><th>类型</th><th>状态</th><th>请求</th>
+            <th>应用</th><th>重复</th><th>冲突</th><th>覆盖写序号</th><th>开始</th><th></th></tr></thead>
+          <tbody id="runs-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel mt12">
+      <h2>演示真值核对 <span class="tag">仅用于验证实现，不作为采集证据</span></h2>
+      <div id="truth" class="stack"></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
